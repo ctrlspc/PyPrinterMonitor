@@ -428,53 +428,66 @@ printer affected, the event type and the toner description eg. 'dpgutenberg', 'T
 **************config defined with one printer, near threshold 5, empty 1, current state is 4, previous state is 6
 >>> minimock.restore()
 >>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
->>> mock('PrinterMonitor.SendAlert')
+>>> mock('PrinterMonitor.sendAlert')
 >>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
 >>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,6)]}
+>>> PrinterMonitor.generateTonerAlerts(currentState, previousState) #doctest: +NORMALIZE_WHITESPACE, +ELLIPSIS
 Called PrinterMonitor.loadConfig()
-Called PrinterMonitor.SendAlert('dpgutenberg', 'TONER NEAR EMPTY', 'toner 1')
+Called PrinterMonitor.sendAlert(...'dpgutenberg',... 'TONER NEAR EMPTY WARNING for toner 1')
 
 **************config defined with one printer, near threshold 5, empty 1, current state is 1, previous state is 4
 >>> minimock.restore()
 >>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
->>> mock('PrinterMonitor.SendAlert')
+>>> mock('PrinterMonitor.sendAlert')
 >>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,1)]}
 >>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
+>>> PrinterMonitor.generateTonerAlerts(currentState, previousState) #doctest: +NORMALIZE_WHITESPACE, +ELLIPSIS
 Called PrinterMonitor.loadConfig()
-Called PrinterMonitor.SendAlert('dpgutenberg', 'TONER EMPTY', 'toner 1')
+Called PrinterMonitor.sendAlert(...'dpgutenberg',... 'TONER EMPTY WARNING for toner 1')
 
 *******************config defined with one printer, near threshold 5, empty 1, current state is 3, previous state is 4
 >>> minimock.restore()
 >>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
->>> mock('PrinterMonitor.SendAlert')
+>>> mock('PrinterMonitor.sendAlert')
 >>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,3)]}
 >>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
+>>> PrinterMonitor.generateTonerAlerts(currentState, previousState) #doctest: +NORMALIZE_WHITESPACE, +ELLIPSIS
 Called PrinterMonitor.loadConfig()
 
 
 **************config defined with two printers, but one without a toners node, near threshold 5, empty 1, current state is 4, previous state is 6
 >>> minimock.restore()
->>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'},'posner':{'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
->>> mock('PrinterMonitor.SendAlert')
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'},'posner':{ 'address': '192.164.0.1'}}})
+>>> mock('PrinterMonitor.sendAlert')
 >>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)], 'posner':[]}
->>> previousState =  None
+>>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,6)], 'posner':[]}
+>>> PrinterMonitor.generateTonerAlerts(currentState, previousState) #doctest: +NORMALIZE_WHITESPACE, +ELLIPSIS
 Called PrinterMonitor.loadConfig()
-Called PrinterMonitor.SendAlert('dpgutenberg', 'TONER NEAR EMPTY', 'toner 1')
+Called PrinterMonitor.sendAlert(...'dpgutenberg', ...'TONER NEAR EMPTY WARNING for toner 1')
 
 **************config defined with two printer, both with near threshold 5, empty 1, current state is 4, previous state is None for both
 >>> minimock.restore()
->>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'},'posner':{'address': '192.164.0.1'}}})
->>> mock('PrinterMonitor.SendAlert')
->>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
->>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,6)]}
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'},'posner':{'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> mock('PrinterMonitor.sendAlert')
 >>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)], 'posner':[PrinterMonitor.TonerState('toner 1',100,4)]}
 >>> previousState =  None
+>>> PrinterMonitor.generateTonerAlerts(currentState, previousState) # doctest: +NORMALIZE_WHITESPACE, +ELLIPSIS
 Called PrinterMonitor.loadConfig()
-Called PrinterMonitor.SendAlert('dpgutenberg', 'TONER NEAR EMPTY', 'toner 1')
-Called PrinterMonitor.SendAlert('posner', 'TONER NEAR EMPTY', 'toner 1')
+Called PrinterMonitor.sendAlert(...'dpgutenberg',... 'TONER NEAR EMPTY WARNING for toner 1')
+Called PrinterMonitor.sendAlert(...'posner', ...'TONER NEAR EMPTY WARNING for toner 1')
 
-
-
+previousstate exists but that particular printer is not in it 
+**************config defined with two printer, both with near threshold 5, empty 1, current state is 4, previous state is None for both
+>>> minimock.restore()
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'},'posner':{'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> mock('PrinterMonitor.sendAlert')
+>>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
+>>> previousState =  None
+>>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,6)], 'posner':[PrinterMonitor.TonerState('toner 1',100,4)]}
+>>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,6)]}
+>>> PrinterMonitor.generateTonerAlerts(currentState, previousState) # doctest: +NORMALIZE_WHITESPACE, +ELLIPSIS
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.sendAlert(...'posner', ...'TONER NEAR EMPTY WARNING for toner 1')
 
 ****************************************************
 * Task 4 propagating messages to the message queue *
@@ -482,4 +495,48 @@ Called PrinterMonitor.SendAlert('posner', 'TONER NEAR EMPTY', 'toner 1')
 
 In order to issue messages we must be able to formulate messages, connect to a message queue at a configured address. WE are going to be using the pika
 library (http://pika.github.com/) to achieve this, and will be connecting to a rabbitmq message queue.
+
+the config file should include a node about the message queue , at a minimum its host name, and the name of the queue to use
+
+the correct method for getting a connection to the server and sending a message is to connect to the server using a blocking connection, declare the queue (in case you are the
+first to try and send to it and it doesn't exist), and then do a basic publish to the queue.
+
+
+>>> from mocker import Mocker
+>>> minimock.restore()
+>>> mocker= Mocker()
+>>> import pika
+
+>>> blockingConnectionMock = mocker.replace('pika.BlockingConnection')
+>>> connectionParametersMock = mocker.replace('pika.ConnectionParameters')
+>>> connectionMock = mocker.mock()
+>>> connectionParametersMock('localhost')#doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+>>> mocker.result(1)
+>>> blockingConnectionMock(1)#doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+
+>>> mocker.result(connectionMock)
+>>> channelMock = mocker.mock()
+>>> connectionMock.channel()#doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+
+>>> mocker.result(channelMock)
+>>> channelMock.queue_declare(queue='RT_Events_q')#doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+
+>>> channelMock.basic_publish(body='dpgutenberg: testMessage', exchange='', routing_key='RT_Events_q')#doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+
+>>> PrinterMonitor.loadConfig = mocker.mock()
+>>> PrinterMonitor.loadConfig()#doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+
+>>> mocker.result({'mq':{'host':'localhost','queue':'RT_Events_q'}})
+>>> mocker.replay()
+>>> PrinterMonitor.sendAlert('dpgutenberg','testMessage')
+
+>>> mocker.restore()
+>>> mocker.verify()
+
  

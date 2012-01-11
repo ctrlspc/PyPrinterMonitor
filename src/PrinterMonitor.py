@@ -209,6 +209,37 @@ def generateTonerAlerts(current, previous):
     '''
     
     '''
+    
+    config = loadConfig()
+    
+    for printer in current:
+        
+        for index in range(len(current[printer])):
+            
+            currentTonerState = current[printer][index]
+            previousTonerState = None
+            
+            if previous != None and printer in previous:
+                previousTonerState = previous[printer][index]
+                
+            #for each tonerState object in the list
+            #get the config object for the current printer
+            if 'toners' in config['printers'][printer]:
+                tonerThresholds = config['printers'][printer]['toners']
+                
+                #check for the empty warning first, then if not triggered check for the near empty
+                if currentTonerState.getPercentageRemaining() <= tonerThresholds['empty']:
+                    if previousTonerState == None or  previousTonerState.getPercentageRemaining() > tonerThresholds['empty']:
+                        #we have met the threshold for the first time send the message
+                        sendAlert(printer, 'TONER EMPTY WARNING for %s' % (currentTonerState.description))
+                elif currentTonerState.getPercentageRemaining() <= tonerThresholds['low']:
+                    if previousTonerState == None or  previousTonerState.getPercentageRemaining() > tonerThresholds['low']:
+                        #we have met the threshold for the first time send the message
+                        sendAlert(printer, 'TONER NEAR EMPTY WARNING for %s' % (currentTonerState.description))
+        
+        
+        
+        
     return None
 def generateAlerts(currentState):
     
@@ -232,6 +263,21 @@ def generateAlerts(currentState):
     pickle.dump(currentState, outFile)
     outFile.close()
     
+def sendAlert(printer,alert):
+    
+    import pika
+    
+    config = loadConfig()
+    
+    if 'mq' in config:
+        
+        connection = pika.BlockingConnection(pika.ConnectionParameters(config['mq']['host']))
+        channel = connection.channel()
+        channel.queue_declare(queue=config['mq']['queue'])
+        channel.basic_publish(exchange='',
+                             routing_key=config['mq']['queue'],
+                             body='%s: %s' % (printer,alert)) 
+
 
 class TonerState():
     '''
@@ -264,4 +310,7 @@ class TonerState():
 
 
 if __name__ == '__main__':
-    pass
+    loadConfig('../configFile.cfg')
+    currentState = GetTonerInformation()
+    generateAlerts(currentState)
+    
