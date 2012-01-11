@@ -1,0 +1,12 @@
+This is a library-in-progress, developed by Jason Marshall from the School of Psychology at the University of Kent, UK
+
+It is being written so that we can remotely monitor our networked printers using SNMP, and send warning to our ticket management system.
+To give us flexibility we are not going to send messages directly to our TMS (we are currently using RT) but to a RabbitMQ message queue,
+we will then have a daemon that will pull messages from this queue and stick them in the TMS.
+
+This library is far from complete at the moment, and there will be significant changes in the future, not least packaging it so that
+dependencies are instlled for you.
+
+NEWS:
+
+11-Jan-2012 v.0.0.1 pushed - This is the first working increment of the library, but it is daar from shippable.
