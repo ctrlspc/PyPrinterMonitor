@@ -1,0 +1,114 @@
+
+#############################################################################################################################
+#                                            Story 1.7                                                                    	#
+#############################################################################################################################
+#																														  	#
+#																														  	#
+#  ***************																										  	#
+#  *    Title    *																										  	#
+#  ***************																										  	#
+#  Send and receive messages to printer located using ip address for location and snmp for protocol						  	#	
+#																															#
+#  ***************																											#
+#  * Description *																											#
+#  ***************																											#
+#  As an admin I want to be able to send SNMP messages to printers, and I want to be able to parse the resulting response 	#
+#  into a useable data structure, so that I can send specific messages to find out specific bits of information.			#
+#																															#
+#  ****************																											#
+#  *  Acceptance  *																											#
+#  ****************																											#
+#  1. Can I connect to a printer and send it a message using SNMP located by ip address? 									#
+#  2. Do I receive a response from the printer?																				#
+#  3. Can I parse the response into a python data structure?																#
+#																															#
+#############################################################################################################################
+
+>>> import PrinterMonitor
+
+
+Testable Specification:
+***********************
+
+We are going to depend on the pssnmp library available here: http://pysnmp.sourceforge.net/download.html 
+>>> import pysnmp
+>>> from pysnmp.entity.rfc3413.oneliner import cmdgen
+
+
+We are going to make an assumption that the majority of operations are going to be simple walk commands, to query individual oid's, requiring no authentication
+For simplicities sake I will wrap the pysnmp functionality for carrying out this type of operation into a module function called SnmpWalk
+The function will require a host parameter which is a string, and an oid which is also a String. 
+The correct implementation of the pysnmp library in this case is to create a command generator object, and call the getCmd method on this object.
+This method accepts 3 parameters:
+	*CommunityData object, in this case we just require public level access
+	*UdpTransportTarget - this defines the host machine, and should be created using the host name passed in to the SnmpWalk function and the standard port number 161
+	*Variables - this equates to the starting oid that is being walked from. It should be a tuple that is created from the oid string passed in.
+The SnmpWalk function will return the the tuple returned by the getCmd method which represent the response from the device: (Error Indication, Error Status, Error Index, Result)
+If all goes well then the only object of interest will be the result object.
+	
+****************** Setup Mocks for tests ******************************
+
+>>> from minimock import mock, Mock
+>>> cmdgen.CommandGenerator = Mock('cmdgen.CommandGenerator')
+>>> cmdgen.CommunityData = Mock('cmdgen.CommunityData')
+>>> cmdgen.UdpTransportTarget = Mock('cmdgen.UdpTransportTarget')
+>>> cgMock = Mock('cgMock')
+>>> cmdgen.CommandGenerator.mock_returns = cgMock
+>>> cmdgen.CommunityData.mock_returns = 1
+>>> cmdgen.UdpTransportTarget.mock_returns = 2
+>>> cgMock.nextCmd.mock_returns = (1,2,3,4)
+
+**************************************************************
+
+###### Test the positional functional call: ######
+
+>>> PrinterMonitor.SnmpWalk('192.0.0.1','1.1.1.1.1.1.1') 
+Called cmdgen.CommandGenerator()
+Called cmdgen.CommunityData('my-manager', 'public')
+Called cmdgen.UdpTransportTarget(('192.0.0.1', 161))
+Called cgMock.nextCmd(1, 2, (1, 1, 1, 1, 1, 1, 1))
+(1, 2, 3, 4)
+
+
+###### An alternative way of calling is using the parameter names ######
+
+>>> PrinterMonitor.SnmpWalk(host='192.0.0.1', oid='1.1.1.1.1.1.1') 
+Called cmdgen.CommandGenerator()
+Called cmdgen.CommunityData('my-manager', 'public')
+Called cmdgen.UdpTransportTarget(('192.0.0.1', 161))
+Called cgMock.nextCmd(1, 2, (1, 1, 1, 1, 1, 1, 1))
+(1, 2, 3, 4)
+
+###### If either of these parameters is missing then an Type error will be raised. ######
+
+>>> PrinterMonitor.SnmpWalk() 
+Traceback (most recent call last):
+TypeError: SnmpWalk() takes exactly 2 arguments (0 given)
+
+###### The host parameter must be a String ######
+>>> PrinterMonitor.SnmpWalk(19216801,'1.1.1.1.1.1.1.1.1.1') 
+Traceback (most recent call last):
+TypeError: The host parameter must be a str
+
+###### However the oid parameter can either be a tuple, or a string otherwise a type error will be raised , however if it is a string it must be properly
+formed. The format is integers seperated by dots, as in 1.1.1.1.1.1.1 ######
+>>> PrinterMonitor.SnmpWalk('192.1.6.801',111111111111111) 
+Traceback (most recent call last):
+TypeError: The oid parameter must be either a str or a tuple.
+
+###### The best way is to supply a tuple ######
+>>> PrinterMonitor.SnmpWalk('192.0.0.1',(1,1,1,1,1,1,1))
+Called cmdgen.CommandGenerator()
+Called cmdgen.CommunityData('my-manager', 'public')
+Called cmdgen.UdpTransportTarget(('192.0.0.1', 161))
+Called cgMock.nextCmd(1, 2, (1, 1, 1, 1, 1, 1, 1))
+(1, 2, 3, 4)
+
+###### you must not have any trailing dots or non integers if you are using a string otherwise you will get a ValueError #######
+>>> PrinterMonitor.SnmpWalk('192.1.6.801','1.1.1.1.1.1.1.1.1.1.') #doctest: +ELLIPSIS
+Traceback (most recent call last):
+ValueError: ...
+
+>>> PrinterMonitor.SnmpWalk('192.1.6.801','1.1.1.1.1.1.1.1.1.a') #doctest: +ELLIPSIS
+Traceback (most recent call last):
+ValueError: ...

@@ -1,0 +1,485 @@
+
+#############################################################################################################################
+#                                            Story 1.1                                                                    	#
+#############################################################################################################################
+#																														  	#
+#																														  	#
+#  ***************																										  	#
+#  *    Title    *																										  	#
+#  ***************																										  	#
+#  Monitor toner / mk levels					  																			#	
+#																															#
+#  ***************																											#
+#  * Description *																											#
+#  ***************																											#
+#  As an admin I want to be able to monitor the toner/maintenance kit levels of my printers, so that I can ensure that 		#
+#  replacements are ordered before we run out, and then replace them when thery run out.									#
+#																															#
+#  ****************																											#
+#  *  Acceptance  *																											#
+#  ****************																											#
+#  1. Can I set a threshold for a near empty and empty warning?																#
+#  2. Can I distinguish between toner and mk?																				#
+#  3. Can I get information on all toners in a multi-toner printer?															#
+#  4. Can I configure this in a configuration file?																			#
+#  5. Does the system only send the notification once?																 		#
+#																															#
+#############################################################################################################################
+
+****************************************
+* Task 1 - Handling configuration file *
+****************************************
+
+Need to be able to read in an yaml based configuration file
+The yaml document will contain root nodes which are printers
+A sub node of this printer node will be the toners node
+This node will contain the near empty and empty threshold values
+
+Example document:
+
+printers:
+    dpgutenberg:
+        address: dpgutenberg.kent.ac.uk
+        toners:
+            low: 5
+            empty: 1
+    dpkandinsky:
+        address: dpkandinsky.kent.ac.uk
+        toners:
+            low: 5
+            empty: 1
+            
+In order to achieve this there will be a function in the PrinterMonitor module called loadConfig(file=None) which will use the pyYaml library to read the
+contents of configuration file passed in to the function and will return a dictionary representation of the config
+
+>>> import PrinterMonitor
+>>> import yaml
+>>> import minimock
+>>> from minimock import mock, Mock
+>>> mock('open', returns=Mock('mockFile'))
+>>> mock('yaml.load', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}})
+>>> mock('PrinterMonitor._checkConfig', returns=True)
+>>> PrinterMonitor.loadConfig('test.txt') #doctest: +ELLIPSIS
+Called open('test.txt', 'r')
+Called yaml.load(...)
+Called mockFile.close()
+Called PrinterMonitor._checkConfig(...{'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}})
+{'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}}
+
+
+***********************
+As well as returning the configuration information, the function will persist the data as a module attribute called config
+>>> PrinterMonitor.config
+{'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}}
+
+
+************************
+if the filename is not specified (ie it is none) then the function attempts to use the module parameter configFile, as it's filename
+>>> PrinterMonitor.config = None
+>>> PrinterMonitor.configFile = 'test.txt'
+>>> PrinterMonitor.loadConfig()  #doctest: +ELLIPSIS
+Called open('test.txt', 'r')
+Called yaml.load(...)
+Called mockFile.close()
+Called PrinterMonitor._checkConfig(...{'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}})
+{'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}}
+
+
+*************************
+if there is no filename defined in configfile then a ValueError exception is raised
+>>> PrinterMonitor.config = None
+>>> PrinterMonitor.configFile = None
+>>> PrinterMonitor.loadConfig()
+Traceback (most recent call last):
+ValueError: No config data nor config file location was available, cannot continue without this data.
+
+************************
+The config file should only be read once. On subsequent calls to this function the dictionary saved in config module attribute is returned.
+>>> PrinterMonitor.config = None
+>>> PrinterMonitor.configFile = None
+>>> PrinterMonitor.loadConfig('test.txt') #doctest: +ELLIPSIS
+Called open('test.txt', 'r')
+Called yaml.load(...)
+Called mockFile.close()
+Called PrinterMonitor._checkConfig(...{'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}})
+{'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}}
+>>> PrinterMonitor.loadConfig('test.txt')
+{'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'dpkandinsky': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.2'}}}
+
+
+************************
+The config file should be correctly formatted, containing the host address of at least one printer. This config checking will be carried out by a 
+private function _checkConfig which will return false if the config fails, or true if it is correctly formatted.
+>>> PrinterMonitor.config = None
+>>> mock('open', returns=Mock('mockFile'))
+>>> mock('yaml.load', returns='incorrectly formatted config')
+>>> mock('PrinterMonitor._checkConfig', returns=False)
+>>> PrinterMonitor.loadConfig('test.txt') #doctest: +ELLIPSIS
+Traceback (most recent call last):
+ValueError: The config file was incorrectly formatted. It must contain the host address of at least one printer.
+
+
+
+************************
+To be correctly formatted the configuration object (the object returned by yaml.load) must be a dictionary. This dictionary should have a key called 'printers', who's value is 
+a dictionary. This dictionary should have at least one key and the value of this key must be a dictionary, and it must at a minimum have a key called 'address', with a string value.
+Each key in the printers dict should be checked that they contain the address key.
+reet the mocks as the _chceckConfig method is currently mocked
+>>> minimock.restore()
+>>> PrinterMonitor._checkConfig('This is totally wrong')
+False
+
+>>> PrinterMonitor._checkConfig({})
+False
+
+>>> PrinterMonitor._checkConfig({'printers':{}})
+False
+
+>>> PrinterMonitor._checkConfig({'printers':{'dpgutenberg':'this is also wrong'}})
+False
+
+>>> PrinterMonitor._checkConfig({'printers':{'dpgutenberg':{}}})
+False
+
+>>> PrinterMonitor._checkConfig({'printers':{'dpgutenberg':{'address':'192.169.0.1'}, 'posner':{}}})
+False
+
+>>> PrinterMonitor._checkConfig({'printers':{'dpgutenberg':{'address':'192.169.0.1'}, 'posner':{'address':'192.169.0.2'}}})
+True
+
+
+*************************************************************
+* Task 2 - Getting the current toner information using SNMP *
+*************************************************************
+     
+From this information we can use the address value to connect to the server, and then using SNMP can find out the current levels for the toners 
+(and maintenance kit which we will treat the same as a toner). We can then compare the actual level with the low and empty thresholds and issue the
+appropriate message.
+
+The starting point oid in the mib for toner information is 1.3.6.1.2.1.43.11.1.1
+Using the PrinterMonitor.SnmpWalk method with this oid will produce a data structure like this:
+[
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.2.1.1), Integer(1))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.2.1.2), Integer(1))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.3.1.1), Integer(1))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.3.1.2), Integer(0))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.4.1.1), Integer(3))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.4.1.2), Integer(3))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.5.1.1), Integer(21))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.5.1.2), Integer(15))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.6.1.1), OctetString(hexValue='426c61636b20436172747269646765204850204343333634580'))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.6.1.2), OctetString(hexValue='4d61696e74656e616e6365204b697420485020313130562d4342333838412c20323230562d4342333839410'))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.7.1.1), Integer(7))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.7.1.2), Integer(7))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.8.1.1), Integer(24000))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.8.1.2), Integer(225000))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.9.1.1), Integer(1200))], 
+	[(ObjectName(1.3.6.1.2.1.43.11.1.1.9.1.2), Integer(184504))]
+]
+
+we are only interested in: 
+
+Toner Name/Description: 1.3.6.1.2.1.43.11.1.1.6.1.x 
+Toner Total Capacity: 	1.3.6.1.2.1.43.11.1.1.8.1.x
+Toner Amount Remaining: 1.3.6.1.2.1.43.11.1.1.9.1.x
+
+for each of these levels there may well be more than one entry (hence the x) , in the above example there is an entry for Black Catrtidge (x=1)
+and the Maintenenace Kit (x = 2)
+
+We will need to take this raw data and create a TonerState object, this will encapsulate the toner name / description, and the percentage remaining
+(derived from the capacity and amount remaining). The percentage remaining will be rounded DOWN to the nearest integer value for simplicity
+
+One complication is that some (possibly all) printers send out a null bit (00) at the end of the OctetString hexValue, which affects the way the 
+value is decoded into a human readable string. Therefore we will need to remove this null bit before processing the octetstring into a human readable
+string.
+
+***** Setting Up Mocks for the SnmpWalk function ******
+>>> import PrinterMonitor
+>>> from minimock import mock, Mock 
+>>> from pysnmp.proto.rfc1155 import ObjectName
+>>> from pyasn1.type.univ import OctetString, Integer
+>>> mock('PrinterMonitor.SnmpWalk', returns=(None, Integer(0), Integer(0), [[(ObjectName((1,3,6,1,2,1,43,11,1,1,2,1,1)), Integer(1))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,2,1,2)), Integer(1))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,3,1,1)), Integer(1))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,3,1,2)), Integer(0))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,4,1,1)), Integer(3))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,4,1,2)), Integer(3))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,5,1,1)), Integer(21))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,5,1,2)), Integer(15))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,6,1,1)), OctetString(hexValue='426c61636b20436172747269646765204850204343333634580'))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,6,1,2)), OctetString(hexValue='4d61696e74656e616e6365204b697420485020313130562d4342333838412c20323230562d4342333839410'))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,7,1,1)), Integer(7))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,7,1,2)), Integer(7))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,8,1,1)), Integer(24000))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,8,1,2)), Integer(225000))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,9,1,1)), Integer(1200))], [(ObjectName((1,3,6,1,2,1,43,11,1,1,9,1,2)), Integer(184504))]]))
+
+There will be a function called GetTonerInformation which does not accept any parameters, it will call the PrinterMonitor.loadConfig function without specifying a filename
+
+
+Based on the config information, for each printer that has a toner node specified the function will use the SnmpWalk function to get the toner 
+information, parse that information into dictionary that has a TonerState object identified by the printer name as a key, which it will return.
+
+
+
+
+****** Config is not present, but filename set ***********
+>>> def checkTonerInfo(tonerInfoList):
+...		for tonerInfo in tonerInfoList:
+...			print tonerInfo.description
+...			print tonerInfo.getPercentageRemaining()
+>>> PrinterMonitor.config = None
+>>> PrinterMonitor.configFile = 'config.txt'
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> tonerInformation = PrinterMonitor.GetTonerInformation()
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SnmpWalk('192.164.0.1', (1, 3, 6, 1, 2, 1, 43, 11, 1, 1))
+>>> checkTonerInfo(tonerInformation['dpgutenberg'])
+Black Cartridge HP CC364X
+5
+Maintenance Kit HP 110V-CB388A, 220V-CB389A
+82
+
+
+****** Two printers defined in the config both with toner nodes ***********
+>>> def checkTonerInfo(tonerInfoList):
+...		for tonerInfo in tonerInfoList:
+...			print tonerInfo.description
+...			print tonerInfo.getPercentageRemaining() 
+>>> mock('PrinterMonitor.loadConfig', returns={'printers':{'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}, 'posner': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> tonerInformation = PrinterMonitor.GetTonerInformation() #doctest: +ELLIPSIS
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SnmpWalk(..., (1, 3, 6, 1, 2, 1, 43, 11, 1, 1))
+Called PrinterMonitor.SnmpWalk(..., (1, 3, 6, 1, 2, 1, 43, 11, 1, 1))
+>>> checkTonerInfo(tonerInformation['dpgutenberg'])
+Black Cartridge HP CC364X
+5
+Maintenance Kit HP 110V-CB388A, 220V-CB389A
+82
+>>> checkTonerInfo(tonerInformation['posner'])
+Black Cartridge HP CC364X
+5
+Maintenance Kit HP 110V-CB388A, 220V-CB389A
+82
+
+****** Two printers defined in the config only one with with toner nodes ***********
+>>> def checkTonerInfo(tonerInfoList):
+...		for tonerInfo in tonerInfoList:
+...			print tonerInfo.description
+...			print tonerInfo.getPercentageRemaining()
+>>> mock('PrinterMonitor.loadConfig', returns={'printers':{'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'},'dpkandinsky': { 'address': '192.164.0.234'}}})
+>>> checkTonerInfo(PrinterMonitor.GetTonerInformation()['dpgutenberg'])
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SnmpWalk('192.164.0.1', (1, 3, 6, 1, 2, 1, 43, 11, 1, 1))
+Black Cartridge HP CC364X
+5
+Maintenance Kit HP 110V-CB388A, 220V-CB389A
+82
+>>> PrinterMonitor.GetTonerInformation()['dpkandinsky'] == None
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SnmpWalk('192.164.0.1', (1, 3, 6, 1, 2, 1, 43, 11, 1, 1))
+True
+
+So far we have assumed that we will actually get a result back from the printer, and that result will have the data that we need in it. However we need
+to deal failed communication, and or instances where we don't get the right data back (for instance if the printer hasn't implemented the mib as we 
+expect to have done)
+
+If the snmp call returns an error indication then we need to let the caller of this function know this so that they can do something about it. This will 
+be done using an error flag on the TonerState object, to indicate that there was a problem, and the errorDescription property that contains some human
+readable information on the error that has befallen us.
+
+**************** Error Indication returned from the SNMP call
+>>> mock('PrinterMonitor.SnmpWalk', returns=('Error', Integer(0), Integer(1), []))
+>>> def checkTonerInfo(tonerInfoList):
+...		for tonerInfo in tonerInfoList:
+...			print tonerInfo.description
+...			print tonerInfo.getPercentageRemaining()
+...			print tonerInfo.error
+...			print tonerInfo.errorDescription
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> tonerInformation = PrinterMonitor.GetTonerInformation()
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SnmpWalk('192.164.0.1', (1, 3, 6, 1, 2, 1, 43, 11, 1, 1))
+>>> checkTonerInfo(tonerInformation['dpgutenberg'])
+None
+0
+True
+SNMP engine-level error has occured. The Error Status is 0, and the Error Index is 1. The Returned result was []
+
+
+**************** SNMP call worked, but the returned data could not be parsed
+>>> mock('PrinterMonitor.SnmpWalk', returns=(None, Integer(0), Integer(0), []))
+>>> def checkTonerInfo(tonerInfoList):
+...		for tonerInfo in tonerInfoList:
+...			print tonerInfo.description
+...			print tonerInfo.getPercentageRemaining()
+...			print tonerInfo.error
+...			print tonerInfo.errorDescription
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> tonerInformation = PrinterMonitor.GetTonerInformation()
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SnmpWalk('192.164.0.1', (1, 3, 6, 1, 2, 1, 43, 11, 1, 1))
+>>> checkTonerInfo(tonerInformation['dpgutenberg'])
+None
+0
+True
+A Data level error has occured, meaning that we have not got the expected data back from the printer about it's toners. The returned data was []
+
+>>> mock('PrinterMonitor.SnmpWalk', returns=(None, Integer(0), Integer(0), ['This is some data, but not the data we want, and will result in index errors if we are assuming a fixed index structure']))
+>>> def checkTonerInfo(tonerInfoList):
+...		for tonerInfo in tonerInfoList:
+...			print tonerInfo.description
+...			print tonerInfo.getPercentageRemaining()
+...			print tonerInfo.error
+...			print tonerInfo.errorDescription
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> tonerInformation = PrinterMonitor.GetTonerInformation()
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SnmpWalk('192.164.0.1', (1, 3, 6, 1, 2, 1, 43, 11, 1, 1))
+>>> checkTonerInfo(tonerInformation['dpgutenberg'])
+None
+0
+True
+A Data level error has occured, meaning that we have not got the expected data back from the printer about it's toners. The returned data was ['This is some data, but not the data we want, and will result in index errors if we are assuming a fixed index structure']
+
+
+
+**********************
+The TonerState object should have named arguments for description, capacity, amountRemaining (in that order)
+>>> testTonerState = PrinterMonitor.TonerState('test toner', 100, 5)
+>>> print testTonerState.description
+test toner
+
+>>> print testTonerState.capacity
+100
+
+>>> print testTonerState.remaining
+5
+
+>>> testTonerState = PrinterMonitor.TonerState(description='test toner', capacity=100, remaining=5)
+>>> print testTonerState.description
+test toner
+
+>>> print testTonerState.capacity
+100
+
+>>> print testTonerState.remaining
+5
+
+
+The TonerState object has a method called getPercentageRemaining() which returns an integer value representing the rounded down integer percentage remaining
+>>> testTonerState = PrinterMonitor.TonerState(description='test toner', capacity=100, remaining=5)
+>>> print testTonerState.getPercentageRemaining()
+5
+
+************************************************
+*  Task 3 - Persisting the toner level values  *
+************************************************
+
+In order to ensure that we only send the message when the threshold is first exceeded then we need to persist the previous value for the toner levels. 
+This will be done by creating a Printer object, which will be pickled to a file saved as <name>.pckl . Once the toner information has been received via
+SNMP then we will unpickle the printer object, which will have the previous toner values. If the previous value was already in excess of a threshold, and 
+then a new message will not be sent (if this reading is also over threshold, which may not be the case if the toner has been replaced since the last reading).
+If however the previous reading was under threshold, and the new reading is over the threshold then a warning will be raised.
+
+To do this there will be a generateAlerts function. This function will use pickle to get the last known state of the printer (if one is avaialable), and then passes this 
+object, along with the current state information to a function called generateTonerAlerts. When this has returned then the current state will be persisted and overwrite the 
+last known state.
+
+>>> minimock.restore()
+>>> import pickle
+>>> mock('pickle.load', returns=2)
+>>> mock('PrinterMonitor.generateTonerAlerts')
+>>> mock('open', returns=Mock('mockFile'))
+>>> mock('pickle.dump')
+>>> currentState = 1
+>>> PrinterMonitor.generateAlerts(currentState) #doctest: +ELLIPSIS , +NORMALIZE_WHITESPACE
+Called open('previousState.pkl', 'r')
+Called pickle.load(...)
+Called mockFile.close()
+Called PrinterMonitor.generateTonerAlerts(1, 2)
+Called open('previousState.pkl', 'w') 
+Called pickle.dump(1, ...)
+Called mockFile.close()
+
+If the pickle file doesn't exist then we should catch this, and only pass the current state to the gernerateTonerAlerts function
+THIS CAN'T BE TESTED WITH MINIMOCK BECAUSE WE NEED THE OPEN FUNCTION TO RAISE AN EXCEPTION THE FIRST TIME BUT WORK THE SECOND TIME ITS USED WITHIN
+THE SAME CALL TO GENERATETONERALERTS - therefore I have used mocker to achieve this - this would propbably make more sense in the context of a unit test.
+
+
+>>> currentState = 1
+>>> from mocker import Mocker
+>>> import __builtin__
+>>> mocker = Mocker()
+>>> mockFileObject = mocker.mock()
+>>> __builtin__.open = mocker.mock()
+>>> __builtin__.open('previousState.pkl', 'r') #doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+>>> mocker.throw(IOError('Boom'))
+>>> __builtin__.open('previousState.pkl','w') #doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+>>> mocker.result(mockFileObject)
+>>> PrinterMonitor.generateTonerAlerts = mocker.mock()
+>>> PrinterMonitor.generateTonerAlerts(1, None) #doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+>>> import pickle
+>>> mock_dump = mocker.replace('pickle.dump')
+>>> mock_dump(1,mockFileObject) #doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+>>> mockFileObject.close() #doctest: +ELLIPSIS 
+<mocker.Mock object at ...>
+>>> mocker.replay()
+>>> PrinterMonitor.generateAlerts(currentState)
+>>> mocker.verify()
+>>> mocker.restore()
+
+For each printer in the current state dictionary, the PrinterMonitor.generateTonerAlerts function should check the config to see what the near empty and empty thresholds 
+are for that printer. It should then check the TonerState objects to see if any of them have exceeded those thresholds. If any have exceeded the thresholds then
+the previous state should be checked (if it exists) to see if the threshold was already exceeded in the previous state. If the threshold was NOT previously exceeded then 
+the function will make a call to the PrinterMonitor.SendAlert function, giving the details of the alert. In this case those details would be the 
+printer affected, the event type and the toner description eg. 'dpgutenberg', 'TONER NEAR EMPTY THRESHOLD EXCEEDED', 'Black Cartridge HP CC364X'
+
+**************config defined with one printer, near threshold 5, empty 1, current state is 4, previous state is 6
+>>> minimock.restore()
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> mock('PrinterMonitor.SendAlert')
+>>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
+>>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,6)]}
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SendAlert('dpgutenberg', 'TONER NEAR EMPTY', 'toner 1')
+
+**************config defined with one printer, near threshold 5, empty 1, current state is 1, previous state is 4
+>>> minimock.restore()
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> mock('PrinterMonitor.SendAlert')
+>>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,1)]}
+>>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SendAlert('dpgutenberg', 'TONER EMPTY', 'toner 1')
+
+*******************config defined with one printer, near threshold 5, empty 1, current state is 3, previous state is 4
+>>> minimock.restore()
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> mock('PrinterMonitor.SendAlert')
+>>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,3)]}
+>>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
+Called PrinterMonitor.loadConfig()
+
+
+**************config defined with two printers, but one without a toners node, near threshold 5, empty 1, current state is 4, previous state is 6
+>>> minimock.restore()
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'},'posner':{'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'}}})
+>>> mock('PrinterMonitor.SendAlert')
+>>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)], 'posner':[]}
+>>> previousState =  None
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SendAlert('dpgutenberg', 'TONER NEAR EMPTY', 'toner 1')
+
+**************config defined with two printer, both with near threshold 5, empty 1, current state is 4, previous state is None for both
+>>> minimock.restore()
+>>> mock('PrinterMonitor.loadConfig', returns={'printers': {'dpgutenberg': {'toners': {'low': 5, 'empty': 1}, 'address': '192.164.0.1'},'posner':{'address': '192.164.0.1'}}})
+>>> mock('PrinterMonitor.SendAlert')
+>>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)]}
+>>> previousState =  {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,6)]}
+>>> currentState = {'dpgutenberg':[PrinterMonitor.TonerState('toner 1',100,4)], 'posner':[PrinterMonitor.TonerState('toner 1',100,4)]}
+>>> previousState =  None
+Called PrinterMonitor.loadConfig()
+Called PrinterMonitor.SendAlert('dpgutenberg', 'TONER NEAR EMPTY', 'toner 1')
+Called PrinterMonitor.SendAlert('posner', 'TONER NEAR EMPTY', 'toner 1')
+
+
+
+
+****************************************************
+* Task 4 propagating messages to the message queue *
+****************************************************
+
+In order to issue messages we must be able to formulate messages, connect to a message queue at a configured address. WE are going to be using the pika
+library (http://pika.github.com/) to achieve this, and will be connecting to a rabbitmq message queue.
+ 
