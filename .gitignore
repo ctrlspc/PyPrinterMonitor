@@ -1,0 +1,13 @@
+# Compiled source #
+###################
+*.pyc
+
+# Persistant data objects #
+###########################
+*.pkl
+
+
+# project setup files #
+#######################
+.project
+.pydevproject
