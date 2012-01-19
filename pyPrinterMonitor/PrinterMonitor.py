@@ -147,7 +147,27 @@ def GetTonerInformation():
         
         if 'toners' in printer:
             #we do want to know about the toners for this printer
-            errorIndication, errorStatus, errorIndex, result = SnmpWalk(printer['address'], (1,3,6,1,2,1,43,11,1,1))
+            
+            #we can either accept an ipaddress or a host name, but if it is a host name then we need to resolve the ipaddress
+            
+            printerAddress = printer['address']
+            
+            ipAddress = ''
+            import re
+            
+            ipMatcher = re.match('^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$',printerAddress) 
+            
+            
+            if ipMatcher:
+                ipAddress = printerAddress
+            else:
+                hostMatcher = re.match('^(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z]|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9])$', printerAddress)
+                
+                if hostMatcher:
+                    import socket
+                    ipAddress = socket.gethostbyname(printerAddress)
+            
+            errorIndication, errorStatus, errorIndex, result = SnmpWalk(ipAddress, (1,3,6,1,2,1,43,11,1,1))
             
             if errorIndication != None:
                 #There was a SNMP error so we need to handle this appropriatley
