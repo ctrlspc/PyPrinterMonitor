@@ -10,3 +10,9 @@ dependencies are instlled for you.
 NEWS:
 
 11-Jan-2012 v.0.0.1 pushed - This is the first working increment of the library, but it is daar from shippable.
+
+External Module Dependencies:
+
+pysnmp - http://pysnmp.sourceforge.net/
+yaml - http://pyyaml.org/
+pika - https://github.com/pika/pika

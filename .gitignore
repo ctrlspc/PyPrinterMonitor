@@ -11,3 +11,8 @@
 #######################
 .project
 .pydevproject
+
+# config files #
+################
+UKC_printersConfig.cfg
+RTConfig.cfg
