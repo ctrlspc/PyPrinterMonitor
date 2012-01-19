@@ -205,7 +205,7 @@ def GetTonerInformation():
                         if tonersDict[keys]['description'].asNumbers()[-1] == 0:
                             tonersDict[keys]['description'] = tonersDict[keys]['description'].prettyIn(tonersDict[keys]['description'].asNumbers()[:-1])
                         else:
-                            tonersDict[keys]['description'] = tonersDict[keys]['description'].asOctets
+                            tonersDict[keys]['description'] = tonersDict[keys]['description'].asOctets()
     
                         tonerStateList.append(TonerState(tonersDict[keys]['description'], \
                                                          int(tonersDict[keys]['capacity']), \
@@ -323,7 +323,16 @@ class TonerState():
 
 
 if __name__ == '__main__':
-    loadConfig('../configFile.cfg')
+
+    import argparse
+    
+    
+    parser = argparse.ArgumentParser(description='PyPrinterMonitor - uses SNMP to get information from your printers.')
+    parser.add_argument('-c','--config', help='The configuration file to be used', required=True)
+    args = vars(parser.parse_args())
+    
+    configFile = args['config']
+    loadConfig(configFile)
     currentState = GetTonerInformation()
     generateAlerts(currentState)
     
