@@ -18,6 +18,7 @@
 
 import pickle
 import logging
+
 config = None
 configFile = None
 
