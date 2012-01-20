@@ -107,7 +107,8 @@ def main():
                           no_ack=True)
     channel.start_consuming()
 
-    
+            
+            
 
 
 
