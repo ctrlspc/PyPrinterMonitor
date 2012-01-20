@@ -1,5 +1,4 @@
 '''
-
 	This program is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
     the Free Software Foundation, either version 3 of the License, or
@@ -18,6 +17,7 @@
 '''
 
 import pickle
+import logging
 config = None
 configFile = None
 
@@ -50,6 +50,9 @@ def SnmpWalk(host,oid):
     comm_data = cmdgen.CommunityData('my-manager','public')
     transport = cmdgen.UdpTransportTarget((host,161))
     variables = oid
+    
+    logging.debug("Sending oid: %s to host: %s" %(oid,host))
+    
     errIndication,errStatus,errIndex, result = cg.nextCmd(comm_data,transport,variables)
     
     return (errIndication,errStatus,errIndex, result)
@@ -107,9 +110,11 @@ def _checkConfig(configObject):
         return False
     else:
         if not 'printers' in configObject:
+            logging.warn('No Printer node available in the config file')
             return False
         else:
             if len(configObject['printers']) == 0:
+                logging.warn('No Printers defined in the printer node in the config file')
                 return False
             else:
                 for key in configObject['printers']:
@@ -117,12 +122,15 @@ def _checkConfig(configObject):
                     printer = configObject['printers'][key]
                     
                     if not isinstance(printer, dict):
+                        logging.warn('A printer node that was not a dictionary was found in the config file: %s' % (printer,))
                         return False
                     else:
                         if not 'address' in printer:
+                            logging.warn('A printer node without an address was found in the config file: %s' % (printer,))
                             return False
                         else:
                             if not isinstance(printer['address'], str):
+                                logging.warn('A printer node with a malformed address was found in the config file - it must resolve to a String: %s' % (printer,))
                                 return False
     
     #Well done you are a well formed configuration!
@@ -152,6 +160,8 @@ def GetTonerInformation():
             
             printerAddress = printer['address']
             
+            logging.info ('Getting Toner information for %s' % (printer['address'],))
+            
             ipAddress = ''
             import re
             
@@ -164,83 +174,103 @@ def GetTonerInformation():
                 hostMatcher = re.match('^(([a-zA-Z]|[a-zA-Z][a-zA-Z0-9\-]*[a-zA-Z0-9])\.)*([A-Za-z]|[A-Za-z][A-Za-z0-9\-]*[A-Za-z0-9])$', printerAddress)
                 
                 if hostMatcher:
+                    logging.debug('Attempting to resolve ip address for hostname: %s' % printerAddress) 
                     import socket
-                    ipAddress = socket.gethostbyname(printerAddress)
-            
-            errorIndication, errorStatus, errorIndex, result = SnmpWalk(ipAddress, (1,3,6,1,2,1,43,11,1,1))
-            
-            if errorIndication != None:
-                #There was a SNMP error so we need to handle this appropriatley
-                
-                tonerStateInstance = TonerState(error=True, errorDescription\
-                            ='SNMP engine-level error has occured. The Error Status is %d, and the Error Index is %d. The Returned result was %s' % \
-                            (errorStatus, errorIndex, str(result)))
-                
-                dataDict[key] = [tonerStateInstance]
-            else:
-                #now we need to create TonerState object for each of the objects in the tonersDict
-                tonerStateList = []
-                gotError = False
-                #the snmp call worked ok, but lets not rule out data problems!
-                
-                tonersDict = {}
-                
-                def addValueToDict(tonerIndex, key, value):
-                    if tonerIndex in tonersDict:
-                        tonersDict[tonerIndex][key] = value
-                    else:
-                        tonersDict[tonerIndex] = {key:value} 
-                
-                
-                    
-                for dataRow in result :
                     
                     try:
-                        oidTuple = dataRow[0][0].asTuple()
-                        if oidTuple[10] == 6:
-                            #description
-                            addValueToDict(oidTuple[-1], 'description', dataRow[0][1])
-                        elif oidTuple[10] == 8:
-                            #capacity
-                            addValueToDict(oidTuple[-1], 'capacity', dataRow[0][1])
-                        elif oidTuple[10] == 9:
-                            #remaining
-                            addValueToDict(oidTuple[-1], 'remaining', dataRow[0][1])
-                    except IndexError:
-                        #if we get an index error here then the data is not properly formed!!
-                        gotError = True
-                    except AttributeError:
-                        #This is most likely because the dataRow[0][0] did not return an ObjectName object
-                        gotError = True
-                
-                if len(tonersDict) <= 0 or gotError:
-                    #result is not properly formed!
-                    tonerStateList.append( TonerState(error=True, errorDescription\
-                            ="A Data level error has occured, meaning that we have not got the expected data back from the printer about it's toners. The returned data was %s" % \
-                            (str(result))))
+                        ipAddress = socket.gethostbyname(printerAddress)
+                    except socket.gaierror:
+                        logging.error('Could not resolve an address for hostname: %s' % (printerAddress,))
+                        ipAddress = None
+                        dataDict[key] = [] #we don't want this to kill the whole process but we won't get any toner info for this host so just return an empty list
+            
+            if ipAddress:
+                errorIndication, errorStatus, errorIndex, result = SnmpWalk(ipAddress, (1,3,6,1,2,1,43,11,1,1))
+            
+                if errorIndication != None:
+                    #There was a SNMP error so we need to handle this appropriatley
+                    logging.error('Printer: %s :SNMP engine-level error has occured. The Error Status is %d, and the Error Index is %d. The Returned result was %s' % 
+                                (printer['address'], errorStatus, errorIndex, str(result)))
+                                
+                    tonerStateInstance = TonerState(error=True, errorDescription\
+                                ='SNMP engine-level error has occured. The Error Status is %d, and the Error Index is %d. The Returned result was %s' % \
+                                (errorStatus, errorIndex, str(result)))
+                    
+                    dataDict[key] = [tonerStateInstance]
                 else:
-                    for keys in tonersDict:
-                        
-                        #strip out any null byte at the end of the octetstring, and decode to human readable string
-                        if tonersDict[keys]['description'].asNumbers()[-1] == 0:
-                            tonersDict[keys]['description'] = tonersDict[keys]['description'].prettyIn(tonersDict[keys]['description'].asNumbers()[:-1])
+                    #now we need to create TonerState object for each of the objects in the tonersDict
+                    tonerStateList = []
+                    gotError = False
+                    #the snmp call worked ok, but lets not rule out data problems!
+                    
+                    tonersDict = {}
+                    
+                    def addValueToDict(tonerIndex, key, value):
+                        if tonerIndex in tonersDict:
+                            tonersDict[tonerIndex][key] = value
                         else:
-                            tonersDict[keys]['description'] = tonersDict[keys]['description'].asOctets()
-    
-                        tonerStateList.append(TonerState(tonersDict[keys]['description'], \
-                                                         int(tonersDict[keys]['capacity']), \
-                                                         int(tonersDict[keys]['remaining'])))   
-                
-                     
-                dataDict[key] = tonerStateList
+                            tonersDict[tonerIndex] = {key:value} 
+                    
+                    
+                        
+                    for dataRow in result :
+                        
+                        try:
+                            oidTuple = dataRow[0][0].asTuple()
+                            if oidTuple[10] == 6:
+                                #description
+                                addValueToDict(oidTuple[-1], 'description', dataRow[0][1])
+                            elif oidTuple[10] == 8:
+                                #capacity
+                                addValueToDict(oidTuple[-1], 'capacity', dataRow[0][1])
+                            elif oidTuple[10] == 9:
+                                #remaining
+                                addValueToDict(oidTuple[-1], 'remaining', dataRow[0][1])
+                        except IndexError:
+                            #if we get an index error here then the data is not properly formed!!
+                            gotError = True
+                        except AttributeError:
+                            #This is most likely because the dataRow[0][0] did not return an ObjectName object
+                            gotError = True
+                    
+                    if len(tonersDict) <= 0 or gotError:
+                        #result is not properly formed!
+                        
+                        logging.error("Printer: %s :A Data level error has occured, meaning that we have not got the expected data back from the printer about it's toners. The returned data was %s" % \
+                                (printer['address'],str(result)))
+                        
+                        tonerStateList.append( TonerState(error=True, errorDescription\
+                                ="A Data level error has occured, meaning that we have not got the expected data back from the printer about it's toners. The returned data was %s" % \
+                                (str(result))))
+                    else:
+                        for keys in tonersDict:
+                            
+                            #strip out any null byte at the end of the octetstring, and decode to human readable string
+                            if tonersDict[keys]['description'].asNumbers()[-1] == 0:
+                                tonersDict[keys]['description'] = tonersDict[keys]['description'].prettyIn(tonersDict[keys]['description'].asNumbers()[:-1])
+                            else:
+                                tonersDict[keys]['description'] = tonersDict[keys]['description'].asOctets()
+        
+                            tonerStateList.append(TonerState(tonersDict[keys]['description'], \
+                                                             int(tonersDict[keys]['capacity']), \
+                                                             int(tonersDict[keys]['remaining'])))   
+                    
+                         
+                    dataDict[key] = tonerStateList
         else:
             dataDict[key] = None      
         
     return dataDict
 
-def generateTonerAlerts(current, previous):
+def generateTonerAlerts(current, previous = None):
     '''
-    
+    	If the current state exceeds either of the toner thresholds for the first time (i.e the threshold had not been met in the previous state)
+    	then an alert will be sent for the most severe threshold crossed - so that if the toner is now empty, only an empty alert will be sent, and the near empty will be
+    	ignored.
+    	
+    	keyword arguments:
+    		current: a dictionary containing the current state of all known printers
+    		previous: a dictionary contaaining the previous state of all known printers (this can be None)
     '''
     
     config = loadConfig()
@@ -277,27 +307,41 @@ def generateTonerAlerts(current, previous):
 def generateAlerts(currentState):
     
     '''
+    	Opens the previous state of the printers which was pickled into the PersistanceFile specified in the config
+    	Then passes the previous state (if there was one) and the current state to a series of generate....Alerts functions.
+    	Finally saves the current state as the previous state for next time.
+    	
+    	keyword arguments:
+    		currentState - a dictionary containing the current state information for the printers.
     '''
-    
+    config = loadConfig()
     
     previousState = None
     
     try:
-        previousStateFile = open('previousState.pkl', 'r')
+        previousStateFile = open(config['PersistanceFile'], 'r')
         previousState = pickle.load(previousStateFile)
         previousStateFile.close()
-    except IOError as e:
+    except IOError:
         #the file doesn't exist so we have no previous state to compare to - ho hum.
         pass
     
     generateTonerAlerts(currentState, previousState)
     
-    outFile =  open('previousState.pkl', 'w')
+    outFile =  open(config['PersistanceFile'], 'w')
     pickle.dump(currentState, outFile)
     outFile.close()
     
 def sendAlert(printer,alert):
     
+    '''
+    	This function uses pika to send a printer specific alert to a message queue defined in the configuration file
+    	
+    	keyword arguments:
+    		printer - the name of the printer that has generated the alert
+    		alert - the body of the alert.
+    
+    '''
     import pika
     
     config = loadConfig()
@@ -349,10 +393,23 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='PyPrinterMonitor - uses SNMP to get information from your printers.')
     parser.add_argument('-c','--config', help='The configuration file to be used', required=True)
+    parser.add_argument('-lf','--logFile', help='The logfile to write out to - if not specified defaults to standard out', default=None)
+    parser.add_argument('-ll','--logLevel', help='The secerity level for logging, ie. DEBUG|INFO|WARNING|ERROR|CRITICAL ', default='WARNING')
     args = vars(parser.parse_args())
+    
+    #setup the basic configuration for the logger
+    if args['logFile']:
+        logging.basicConfig(filename=args['logfile'], level=args['logLevel'])
+    else:
+        logging.basicConfig(level=args['logLevel'])
+    
+    logging.debug("Started Printer Monitor")
+    
     
     configFile = args['config']
     loadConfig(configFile)
     currentState = GetTonerInformation()
     generateAlerts(currentState)
     
+    
+    logging.debug("Finished Printer Monitor")
